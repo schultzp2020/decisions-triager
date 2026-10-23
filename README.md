@@ -6,205 +6,271 @@ behind a fail-closed safety model so a bad config, a flaky model, or a
 racy edit can never corrupt your tracker.
 
 Classification runs through [`jira.js`](https://github.com/mrrefactoring/jira.js)
-+ [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi-ai) behind
-a small adapter layer: by default a self-hosted llama.cpp System One
-decision model; `classifier.backend: openai` swaps to OpenAI's Decisions
-API with a config change. TypeScript, no build step — Node runs the source
-directly.
 
-## Quick start
+- [`@earendil-works/pi-ai`](https://github.com/earendil-works/pi-ai) behind
+  a small adapter layer: by default a self-hosted llama.cpp System One
+  decision model; `classifier.backend: openai` swaps to OpenAI's Decisions
+  API with a config change. TypeScript, no build step — Node runs the source
+  directly.
+
+This README is organized by what you're here to do: a tutorial to get a
+first dry run working, how-to guides for common tasks, reference for every
+knob, and an explanation of the safety model.
+
+## Tutorial: first dry run in 5 minutes
+
+You will clone the repo, point it at a Jira site with fictional-but-valid
+catalogs, and run it in dry-run mode — no writes, no model server needed
+to validate the setup.
+
+1. **Install.**
+
+   ```bash
+   git clone https://github.com/schultzp2020/decisions-triager
+   cd decisions-triager
+   pnpm install
+   pnpm check   # lint + format + tests; all offline
+   ```
+
+2. **Create your config.** Copy the example files — the copies are
+   gitignored, because they name your site and your teams:
+
+   ```bash
+   cp config.example.yaml config.yaml
+   cp teams.example.json teams.json
+   cp components.example.json components.json
+   cp .env.example .env
+   ```
+
+3. **Fill in `config.yaml`**: set `jira.server` to your Jira site and the
+   two `jql.*` queries to your projects. `teams.json` maps each team to
+   its Jira UUID, members, and component scope; `components.json` maps
+   each canonical component to a description and its aliases.
+
+4. **Add your credential** to `.env`:
+
+   ```dotenv
+   JIRA_API_TOKEN=you@example.com:your-api-token
+   ```
+
+   Create the token at Jira → Settings → Security → API token
+   (`email:token` is sent as Basic auth to your configured origin only).
+
+5. **Validate offline.**
+
+   ```bash
+   node src/index.ts --check
+   ```
+
+   Expected output: `configuration valid (no network)`. Any config typo,
+   unknown key, malformed catalog, or bad credential shape aborts here
+   with a precise message.
+
+6. **Dry run.**
+
+   ```bash
+   node src/index.ts
+   ```
+
+   The tool fetches candidates (default limit 100), asks the classifier,
+   and logs one structured JSON line per ticket — but since `dry_run`
+   defaults to `true`, nothing is written to Jira. A `report-*.json`
+   artifact lands in the working directory; open it and check the
+   `decisions` and `writes` entries.
+
+To make the run meaningful you need a classifier: a local `llama-server`
+on `http://localhost:8080` serving a System One decision model, or the
+OpenAI backend (next section). With no classifier reachable, every ticket
+is recorded as `classify-failed` and nothing is written — that is the
+intended behavior.
+
+## How-to guides
+
+### Swap llama.cpp → OpenAI Decisions
+
+In `config.yaml`:
+
+```yaml
+classifier:
+  backend: openai
+  base_url: https://api.openai.com/v1
+  model: gpt-6-luna
+```
+
+Add `CLASSIFIER_API_KEY=sk-...` to `.env`. Both backends answer the same
+two questions per ticket (Team, component) with choice + confidence +
+probability distributions; the policy layer treats them identically, so
+nothing else changes. To go back, restore `backend: llama` with your
+`llama-server` base URL and model id.
+
+The llama backend reads next-token probabilities from `llama-server`, so
+its confidence numbers are actual model probabilities; no API key is
+needed on a trusted network.
+
+### Go live
+
+1. Confirm the dry-run report looks sane over a few runs.
+2. Set `dry_run: false` in `config.yaml` — or keep the file at `true` and
+   flip only the scheduled invocation with `DRY_RUN=false` in the
+   environment, which overrides the file. The env value is strict:
+   anything but `true`/`false` aborts startup.
+3. Schedule it, e.g. cron:
+
+   ```cron
+   0 */2 * * * cd /srv/decisions-triager && DRY_RUN=false node src/index.ts >> triager.log 2>&1
+   ```
+
+Read the safety model below for exactly what can and cannot be written.
+
+### Audit stale assignments
 
 ```bash
-git clone https://github.com/schultzp2020/decisions-triager
-cd decisions-triager
-pnpm install
-
-cp config.example.yaml config.yaml    # fill in your Jira site + JQL
-cp teams.example.json teams.json      # your team catalog
-cp components.example.json components.json   # your component catalog
-cp .env.example .env                  # JIRA_API_TOKEN, CLASSIFIER_API_KEY
-
-node src/index.ts --check             # offline validation, no network
-node src/index.ts                     # triage mode (dry run by default)
+node src/index.ts --mode audit
 ```
 
-## Safety model
+Audit re-checks tickets whose Team and component are already set and
+corrects validated, high-confidence mismatches. Corrected tickets are
+remembered in `triager-state.json` (atomic writes) and deduplicated for
+`audit.recheck_days` (default 30) so the same ticket isn't re-litigated
+every run. Dry-run rules apply here too: `dry_run: true` computes and
+reports corrections but writes nothing and records no state.
 
-- **`dry_run` defaults to `true`** — nothing is written to Jira unless the
-  config (or `DRY_RUN=false` in the environment) says otherwise.
-- **Strict configuration**: every `config.yaml` value is validated against
-  a [TypeBox](https://github.com/sinclairzx81/typebox) schema before use;
-  unknown keys and wrong types abort startup. A typo like
-  `dry_run: "ture"` can never silently enable live writes, and a
-  `confidence_threshold` outside `[0, 1]` can never bypass the gate.
-- **The Jira credential is pinned to one origin**: `jira.server` must be
-  exactly one `https` origin (no port, path, query, fragment, or user
-  info), validated at load time before any credential is constructed.
-  Mutations never follow redirects (a 301 destroys PUT bodies), requests
-  are single-attempt with a 30s timeout, and HTTP failures surface the
-  status code only — response bodies never reach logs or reports.
-- **Fetched issues are validated** before anything is decided or written:
-  the key must be readable (and match the requested key on a re-fetch),
-  every requested field must be present, and values must have supported
-  shapes. Omitted keys and unreadable shapes **fail the ticket** — they
-  never count as "missing" (writable) fields, and no project default is
-  ever assumed. Descriptions accept strings or validated Cloud ADF
-  documents (max depth 10, max 10,000 nodes); unknown/malformed ADF fails
-  closed.
-- Deterministic pre-routes run **before** any model call:
-  - both fields already set → ticket skipped, no model call;
-  - the assignee is a known team member and Team is missing → that team is
-    assigned deterministically (no model call for Team).
-- **Classifier failure suppresses all writes for that ticket**: if the
-  classify call fails, every field that needed a decision is recorded as
-  `classify-failed` and nothing is written — including the deterministic
-  assignee-routed team.
-- Model answers are validated: the choice must be an allowed label,
-  confidence a number in `[0, 1]` at or above `confidence_threshold`.
-  Anything else **abstains** — no write, logged for human review. There is
-  no fallback model.
-- Predicted components are canonicalized through `components.json` and
-  must exist in the **live** Jira project component list. Lookup failure or
-  an unknown canonical name abstains; unvalidated labels are never written.
-- Before each write the issue is re-fetched and the field is only filled if
-  still missing (or, in audit mode, unchanged since the search snapshot);
-  the update path re-fetches and verifies **twice** more immediately before
-  dispatch, skipping (`skipped-race`) any field that changed. Jira offers
-  no atomic compare-and-set, so a small residual race window remains.
-- **Team writes use catalog UUIDs with a live cross-check**: the catalog in
-  `teams.json` is authoritative; a live Jira UUID that disagrees with it
-  marks the team conflicted for the run and Team writes for it abstain
-  (`team-uuid-conflict`).
-- Logs are bounded and secret-redacted: configured tokens and the encoded
-  credential never appear in diagnostics, reports, or the audit state file.
+### Evaluate a labeled export
 
-## Layout
-
-```
-config.yaml      settings (the single settings surface; gitignored)
-.env             secrets: JIRA_API_TOKEN, CLASSIFIER_API_KEY (gitignored)
-teams.json       team catalog: {team: {id, components, members, description?}}
-components.json  component catalog: {canonical: {description, aliases}}
-src/
-  index.ts       CLI (cleye): --mode/--check/--report/--corpus/--sample
-  config.ts      strict TypeBox-validated config.yaml + env
-  classifier.ts  pi-ai adapter (llama System One | OpenAI Decisions)
-  jira.ts        jira.js adapter: origin pin, no redirects, one attempt
-  normalize.ts   raw Jira payloads -> validated Tickets (fail closed)
-  gateway.ts     guarded reads/writes, team-UUID cross-check
-  questions.ts   classifier state + questions (the prompt contract)
-  policy.ts      answer validation, canonicalization, write eligibility
-  modes.ts       triage / audit / eval orchestration
-  state.ts       audit history (atomic, validated)
-  report.ts      run summary + JSON report artifacts
-tests/           offline vitest suites (no Jira, no model)
+```bash
+node src/index.ts --mode eval --corpus export.json --sample 100
 ```
 
-`teams.json` and `components.json` are deployment-private (gitignored);
-the committed `*.example*` files show the shape with fictional data.
+Eval replays a labeled corpus (`key`, `title`, `description`, `team`,
+`component` per row — labels may be `null`) through the classifier only;
+it never contacts Jira. The report contains per-field agreement rates,
+confusion matrices (with `<empty>`, `<invalid>`, `<classify-failed>`
+sentinels), the confidence distribution, and would-write counts.
+`--sample 100` replays only the first 100 rows.
 
-## Configuration
+## Reference
 
-`config.yaml` holds every setting; secrets live in `.env` (or the
-environment, loaded with Node's built-in `process.loadEnvFile`) and are
-never committed. `DRY_RUN` in the environment overrides the file (strict
-`true`/`false` only).
+### `config.yaml`
 
-Required settings (see `config.example.yaml`):
+Validated against a [TypeBox](https://github.com/sinclairzx81/typebox)
+schema at startup: unknown keys and wrong types abort the run — a typo
+can never silently enable live writes. Required settings:
 
-| Setting              | Purpose                                                                     |
-| -------------------- | --------------------------------------------------------------------------- |
-| `jira.server`        | Exactly one `https` origin, e.g. `https://your-site.atlassian.net`          |
-| `jql.candidate`      | Search for tickets missing Team and/or component                            |
-| `jql.audit`          | Search for tickets with Team and component both set                         |
-| `team_name_prefixes` | Strip site-specific prefixes from Jira team names, e.g. `["ACME "]`         |
+| Setting              | Purpose                                                                                                           |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `jira.server`        | Exactly one `https` origin, e.g. `https://your-site.atlassian.net` — no port, path, query, fragment, or user info |
+| `jql.candidate`      | Search for tickets missing Team and/or component                                                                  |
+| `jql.audit`          | Search for tickets with Team and component both set                                                               |
+| `team_name_prefixes` | Prefixes stripped from live Jira team names before catalog matching (case-insensitive), e.g. `["ACME "]`          |
 
 Optional settings:
 
-| Setting                            | Default                   | Purpose                                                                       |
-| ---------------------------------- | ------------------------- | ----------------------------------------------------------------------------- |
-| `mode`                             | `triage`                  | `triage` \| `audit` \| `eval` (`--mode` overrides)                            |
-| `classifier.backend`               | `llama`                   | `llama` (System One on llama.cpp `/v1/systemone`) or `openai` (Decisions API) |
-| `classifier.base_url`              | per backend               | `http://localhost:8080/v1` for llama; `https://api.openai.com/v1` for openai  |
-| `classifier.model`                 | per backend               | `ggml-org/vllm-d3-flash-GGUF:Q8_0` for llama; `gpt-6-luna` for openai         |
-| `classifier.timeout_seconds`       | `60`                      | Per-request timeout (>= 1)                                                    |
-| `confidence_threshold`             | `0.7`                     | Minimum confidence to write (inclusive), `[0, 1]`                             |
-| `assignee_route`                   | `true`                    | Deterministic assignee→team pre-route                                         |
-| `dry_run`                          | `true`                    | `false` enables live Jira writes                                              |
-| `max_tickets`                      | `100`                     | Candidate limit per run (>= 1)                                                |
-| `description_max_chars`            | `48000`                   | Cap on the description sent to the classifier (>= 500)                        |
-| `audit.recheck_days`               | `30`                      | Dedup interval for re-audits (>= 0)                                           |
-| `audit.state_file`                 | `triager-state.json`      | Audit history (atomic JSON, cwd-relative)                                     |
-| `report_file`                      | `report-<timestamp>.json` | Per-run JSON artifact                                                         |
-| `files.teams` / `files.components` | shipped files             | Catalog overrides (package-relative when bare)                                |
+| Setting                            | Default                            | Purpose                                                       |
+| ---------------------------------- | ---------------------------------- | ------------------------------------------------------------- |
+| `mode`                             | `triage`                           | `triage` \| `audit` \| `eval`                                 |
+| `classifier.backend`               | `llama`                            | `llama` (System One on llama.cpp) or `openai` (Decisions API) |
+| `classifier.base_url`              | `http://localhost:8080/v1`         | Classifier endpoint; set explicitly for `openai`              |
+| `classifier.model`                 | `ggml-org/vllm-d3-flash-GGUF:Q8_0` | Model id; set explicitly for `openai`                         |
+| `classifier.timeout_seconds`       | `60`                               | Per-request timeout (>= 1)                                    |
+| `confidence_threshold`             | `0.7`                              | Minimum confidence to write (inclusive), `[0, 1]`             |
+| `assignee_route`                   | `true`                             | Deterministic assignee→team pre-route                         |
+| `dry_run`                          | `true`                             | `false` enables live Jira writes                              |
+| `max_tickets`                      | `100`                              | Candidate limit per run (>= 1)                                |
+| `description_max_chars`            | `48000`                            | Cap on the description sent to the classifier (>= 500)        |
+| `audit.recheck_days`               | `30`                               | Dedup interval for re-audits (>= 0)                           |
+| `audit.state_file`                 | `triager-state.json`               | Audit history (atomic JSON, cwd-relative)                     |
+| `report_file`                      | `report-<timestamp>.json`          | Per-run JSON artifact                                         |
+| `files.teams` / `files.components` | shipped files                      | Catalog paths (package-relative when bare)                    |
 
-Secrets (`.env`, copy from `.env.example`):
+Relative catalog paths resolve against the package directory, not the
+working directory.
 
-| Variable             | Purpose                                                          |
-| -------------------- | ---------------------------------------------------------------- |
-| `JIRA_API_TOKEN`     | `email:api-token` — sent as Basic auth to the configured origin only |
-| `CLASSIFIER_API_KEY` | Required for the `openai` backend; optional for local llama      |
+### Secrets and environment
 
-`TRIAGER_CONFIG` in the environment points the CLI at a different config
-file.
+| Variable             | Purpose                                                                 |
+| -------------------- | ----------------------------------------------------------------------- |
+| `JIRA_API_TOKEN`     | `email:api-token`, Basic auth to the configured origin only             |
+| `CLASSIFIER_API_KEY` | Required for the `openai` backend; optional for local llama             |
+| `DRY_RUN`            | Strict `true`/`false` override of `dry_run` (the cron switch)           |
+| `TRIAGER_CONFIG`     | Path to a different config file (default: `config.yaml` in the package) |
 
-## Running
+Secrets load from `.env` in the working directory (Node's built-in
+`process.loadEnvFile`: no variable expansion, existing environment
+variables win). Tokens and the encoded credential are registered for
+redaction and never appear in logs, reports, or state files.
 
-```bash
-pnpm install            # once
-pnpm check              # lint + format + tests
+### CLI
 
-node src/index.ts --check                       # offline config validation
-node src/index.ts                               # triage mode (dry run)
-DRY_RUN=false node src/index.ts                 # triage mode (live)
-node src/index.ts --mode audit                  # correct stale assignments
-node src/index.ts --mode eval --corpus export.json --sample 100
-node src/index.ts --mode audit --report out.json
+```
+node src/index.ts [--mode triage|audit|eval] [--check] [--report <path>]
+                  [--corpus <path>] [--sample <n>]
 ```
 
-`--check` validates the config, catalogs, and credentials without network
-access (audit mode additionally validates the state file). Exit code is `0`
-on success, `1` if the run fails or any per-ticket write errored.
+| Flag       | Effect                                                                                      |
+| ---------- | ------------------------------------------------------------------------------------------- |
+| `--check`  | Validate config, catalogs, credentials (and audit state, in audit mode) offline; no network |
+| `--mode`   | Override `mode`                                                                             |
+| `--report` | Write the run report to this path                                                           |
+| `--corpus` | Labeled export for eval mode (required unless `--check`)                                    |
+| `--sample` | Replay only the first N corpus records (integer >= 1)                                       |
 
-Modes:
+Exit code `0` on success; `1` on any run failure, per-ticket error, or
+write error. Errors are logged in two phases — `invalid configuration:`
+before any run, `triage run failed:` after.
 
-- **triage** — fill missing Team/component on open candidates.
-- **audit** — re-check tickets whose fields are all set; correct only
-  validated, high-confidence mismatches, deduplicated through the state
-  file for `recheck_days`.
-- **eval** — replay a labeled export (`key`, `title`, `description`,
-  `team`, `component`) through the classifier only; never contacts Jira.
-  Produces agreement/confusion metrics.
+### Run artifacts
 
-Each ticket logs one structured JSON line (`key`, `outcome`, `decisions`
-with confidence and top-3 probabilities, `writes` with per-field status).
-Every run appends to `reports/index.jsonl` and writes its report artifact.
+- `report-<timestamp>.json` — full per-ticket decisions, write statuses,
+  and counts (secrets redacted).
+- `reports/index.jsonl` — one line per run with its report path.
+- `triager-state.json` — audit history (audit mode only), atomic writes.
 
-## The classifier backends
+## Explanation: the safety model
 
-- **`llama`** (default) — [System One](https://github.com/ggml-org) style
-  decision calls against a self-hosted llama.cpp server
-  (`llama-server`). Reads next-token probabilities, so confidence numbers
-  are actual model probabilities. No API key needed on a trusted network.
-- **`openai`** — OpenAI's Decisions API. Needs `CLASSIFIER_API_KEY` in
-  `.env`.
+The triager's contract is that it may only ever fill or correct fields it
+was explicitly configured to touch, and only when every check along the
+way passed. Every layer fails closed:
 
-Both answer the same two questions per ticket (Team, component) with
-choice + confidence + probability distributions; the policy layer treats
-them identically.
-
-## Tests
-
-```bash
-pnpm test
-```
-
-Offline vitest suites cover: strict config validation, fail-closed issue
-normalization (including ADF bounds), the guarded write paths and race
-skips, team-UUID conflicts, all three modes, audit-history semantics, the
-jira.js adapter's wire contracts (through its fetch seam), and the pi-ai
-classifier adapter (through injected backend functions). Nothing in the
-suite contacts Jira or a model.
+- **Dry-run default.** Nothing is written unless the config — or the
+  deliberate `DRY_RUN=false` env override — says otherwise.
+- **One origin, one credential path.** `jira.server` must be exactly one
+  `https` origin, validated before any credential is constructed.
+  Mutations never follow redirects (a 301 destroys PUT bodies), requests
+  are single-attempt with a 30s timeout, and HTTP failures surface the
+  status code only — response bodies never reach logs or reports.
+- **Validated inputs.** Fetched issues are validated before anything is
+  decided: keys must be readable and match on re-fetch, requested fields
+  must be present with supported shapes. Omitted or unreadable shapes
+  fail the ticket — they never count as "missing" (writable) fields, and
+  no project default is ever assumed. Descriptions accept strings or
+  validated Cloud ADF documents (max depth 10, max 10,000 nodes).
+- **Deterministic first.** Both fields already set → skip, no model call.
+  Assignee is a known team member → assign that team directly, no model
+  call. The model is only asked for what's genuinely undetermined.
+- **Classifier failure suppresses all writes for the ticket** — including
+  the deterministic assignee-routed team. Every undecided field is
+  recorded as `classify-failed`; nothing is written.
+- **Validated answers.** A choice must be an allowed label, confidence a
+  number in `[0, 1]` at or above `confidence_threshold`. Anything else
+  abstains — no write, logged for human review. There is no fallback
+  model.
+- **Live component gating.** Predicted components are canonicalized
+  through `components.json` and must exist in the live Jira project
+  component list; lookup failure or an unknown canonical name abstains.
+  Unvalidated labels are never written.
+- **Race defense.** Jira offers no atomic compare-and-set, so before each
+  write the issue is re-fetched and the field written only if still
+  missing (or unchanged since the search snapshot in audit mode); the
+  update path re-fetches and verifies twice more, skipping
+  (`skipped-race`) any field that changed. A small residual race window
+  remains — that's inherent to the Jira API, which is why every write
+  path is also independently guarded.
+- **Authoritative team UUIDs.** Team writes use catalog UUIDs with a live
+  cross-check: a live Jira UUID that disagrees with the catalog marks the
+  team conflicted for the run and Team writes for it abstain
+  (`team-uuid-conflict`).
+- **Bounded, redacted diagnostics.** Configured tokens and the encoded
+  credential never appear in logs, reports, or the audit state file.
 
 ## License
 

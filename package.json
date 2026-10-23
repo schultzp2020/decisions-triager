@@ -2,15 +2,12 @@
   "name": "decisions-triager",
   "version": "1.0.0",
   "description": "Guarded Jira auto-triage: decision-model classification (llama.cpp / OpenAI) with fail-closed writes",
-  "type": "module",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/schultzp2020/decisions-triager.git"
   },
-  "engines": {
-    "node": ">=24"
-  },
+  "type": "module",
   "scripts": {
     "start": "node src/index.ts",
     "lint": "oxlint --deny-warnings --type-aware --type-check",
@@ -34,5 +31,8 @@
     "oxlint": "^1.89.0",
     "oxlint-tsgolint": "^7.0.2004",
     "vitest": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
