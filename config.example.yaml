@@ -1,0 +1,70 @@
+# decisions-triager — example configuration.
+#
+# Copy to config.yaml and fill in. config.yaml is gitignored on purpose:
+# it names your Jira site, your projects, and your team catalog.
+# Secrets (JIRA_API_TOKEN, CLASSIFIER_API_KEY) go in .env, never here.
+#
+# Every value is validated at startup: unknown keys and wrong types abort
+# the run — a typo can never silently enable live writes.
+
+mode: triage # triage | audit | eval
+
+jira:
+  # The one https origin the credential may ever be sent to. Exactly one
+  # origin: no port, path, query, fragment, or user info.
+  server: https://your-site.atlassian.net
+
+jql:
+  # Candidates: open tickets missing Team and/or component. cf[10001] is
+  # the Jira custom field id for "Team" — check yours under
+  # Settings > Issues > Custom fields if it differs.
+  # Multiword issue-type names must be double-quoted or the JQL is invalid.
+  candidate: >-
+    project in (PROJ, SUPP) AND status != closed
+    AND (cf[10001] is EMPTY OR component is EMPTY)
+    AND issuetype not in ("Sub-task", "Epic", "Feature")
+  # Audit: tickets with Team AND component set, for re-checking stale ones.
+  audit: >-
+    project in (PROJ, SUPP) AND status != closed
+    AND cf[10001] is not EMPTY AND component is not EMPTY
+
+# Site-specific prefixes stripped from Jira team names before catalog
+# matching (case-insensitive). E.g. ["ACME "] makes a live "ACME Platform"
+# team match a "Platform" catalog entry.
+team_name_prefixes: []
+
+classifier:
+  # llama: llama-server serving a System One decision model (/v1/systemone),
+  #   e.g. ggml-org's d3-flash. No API key needed locally.
+  # openai: OpenAI's Decisions API (needs CLASSIFIER_API_KEY in .env).
+  backend: llama
+  base_url: http://localhost:8080/v1
+  model: ggml-org/vllm-d3-flash-GGUF:Q8_0
+  timeout_seconds: 60
+
+# Minimum model confidence to write (inclusive), 0..1.
+confidence_threshold: 0.7
+
+# Deterministic assignee->team pre-route before any model call.
+assignee_route: true
+
+# true: no Jira field is ever written. DRY_RUN=false in the environment
+# overrides this (the cron switch).
+dry_run: true
+
+max_tickets: 100
+description_max_chars: 48000
+
+audit:
+  recheck_days: 30
+  state_file: triager-state.json
+
+# Empty: report-<timestamp>.json in the working directory.
+report_file: ""
+
+# Catalogs: copy teams.example.json -> teams.json and
+# components.example.json -> components.json, then fill them in.
+# Paths resolve against this package's directory when relative.
+files:
+  teams: teams.json
+  components: components.json

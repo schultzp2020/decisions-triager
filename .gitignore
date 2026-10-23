@@ -1,0 +1,34 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+node_modules
+dist
+*.local
+
+# Deployment configuration and catalogs: private, never commit.
+# Copy the *.example* files to fill in your own.
+.env
+config.yaml
+teams.json
+components.json
+
+# Run artifacts
+triager-state.json
+report-*.json
+reports/
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

@@ -1,0 +1,18 @@
+{
+  "Catalog": {
+    "description": "Software catalog (entity metadata, sources, composability)",
+    "aliases": ["Catalog Plugin"]
+  },
+  "Build": {
+    "description": "Build pipeline and CI integrations",
+    "aliases": []
+  },
+  "Helm Chart": {
+    "description": "Helm chart for deployment",
+    "aliases": []
+  },
+  "Operator": {
+    "description": "Kubernetes operator for installation",
+    "aliases": ["K8s Operator"]
+  }
+}

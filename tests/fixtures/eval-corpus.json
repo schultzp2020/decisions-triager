@@ -1,0 +1,16 @@
+[
+  {
+    "key": "PROJ-101",
+    "title": "Catalog import",
+    "description": "Import fails",
+    "team": "Platform",
+    "component": "Catalog"
+  },
+  {
+    "key": "PROJ-102",
+    "title": "Helm deployment",
+    "description": "Deployment fails",
+    "team": "Install",
+    "component": "Helm Chart"
+  }
+]
