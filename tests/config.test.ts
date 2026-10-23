@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ConfigError, loadConfig } from "../src/config.ts";
+import { BASE_DIR, ConfigError, loadConfig } from "../src/config.ts";
 import { REQUIRED_YAML } from "./helpers.ts";
 import { redact, resetSecrets } from "../src/redact.ts";
 
@@ -96,7 +96,9 @@ describe("config.yaml loading", () => {
 
   it("relative data file paths resolve against the package directory", () => {
     const config = loadConfig({}, { yamlText: `${REQUIRED_YAML}files:\n  teams: my-teams.json\n` });
-    expect(config.teamConfigFile.replaceAll("\\", "/")).toMatch(/triager[/\\]my-teams\.json$/u);
+    expect(config.teamConfigFile.replaceAll("\\", "/")).toBe(
+      `${BASE_DIR.replaceAll("\\", "/")}/my-teams.json`,
+    );
   });
 });
 
