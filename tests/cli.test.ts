@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const CLI = join(import.meta.dirname, "..", "src", "index.ts");
+const FIXTURE_CONFIG = join(import.meta.dirname, "fixtures", "config.yaml");
 
 function runCli(
   args: string[],
@@ -14,7 +15,7 @@ function runCli(
   try {
     const output = execFileSync("node", [CLI, ...args], {
       encoding: "utf-8",
-      env: { ...process.env, ...env },
+      env: { ...process.env, TRIAGER_CONFIG: FIXTURE_CONFIG, ...env },
       ...(cwd ? { cwd } : {}),
     });
     return { status: 0, output, err: "" };
