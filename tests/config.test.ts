@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { BASE_DIR, ConfigError, loadConfig } from "../src/config.ts";
-import { REQUIRED_YAML } from "./helpers.ts";
+import { REQUIRED_YAML, REQUIRED_YAML_NO_CLASSIFIER } from "./helpers.ts";
 import { redact, resetSecrets } from "../src/redact.ts";
 
 const BASE_YAML = REQUIRED_YAML; // required surface + defaults for the rest
@@ -11,7 +11,7 @@ describe("config.yaml loading", () => {
     expect(config.mode).toBe("triage");
     expect(config.classifierBackend).toBe("llama");
     expect(config.classifierBaseUrl).toBe("http://localhost:8080/v1");
-    expect(config.classifierModel).toBe("ggml-org/vllm-d3-flash-GGUF:Q8_0");
+    expect(config.classifierModel).toBe("test-model");
     expect(config.classifierTimeoutSeconds).toBe(60);
     expect(config.confidenceThreshold).toBe(0.7);
     expect(config.assigneeRoute).toBeTruthy();
@@ -41,7 +41,12 @@ describe("config.yaml loading", () => {
       ConfigError,
     );
     expect(() =>
-      loadConfig({}, { yamlText: `${REQUIRED_YAML}classifier:\n  backends: llama\n` }),
+      loadConfig(
+        {},
+        {
+          yamlText: `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: llama\n  base_url: http://x/v1\n  model: m\n  backends: llama\n`,
+        },
+      ),
     ).toThrow(/unknown key 'backends'/);
   });
 
@@ -53,10 +58,10 @@ describe("config.yaml loading", () => {
       `${REQUIRED_YAML}confidence_threshold: -0.1\n`,
       `${REQUIRED_YAML}confidence_threshold: nan\n`,
       `${REQUIRED_YAML}mode: sideways\n`,
-      `${REQUIRED_YAML}classifier:\n  backend: gemini\n`,
+      `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: gemini\n`,
       `${REQUIRED_YAML}max_tickets: 0\n`,
       `${REQUIRED_YAML}description_max_chars: 100\n`,
-      `${REQUIRED_YAML}classifier:\n  timeout_seconds: 0\n`,
+      `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: llama\n  base_url: http://x/v1\n  model: m\n  timeout_seconds: 0\n`,
     ]) {
       expect(() => loadConfig({}, { yamlText: yaml })).toThrow(ConfigError);
     }
@@ -88,7 +93,7 @@ describe("config.yaml loading", () => {
     loadConfig(
       {},
       {
-        yamlText: `${REQUIRED_YAML}classifier:\n  base_url: http://user:pass@llama:8080/v1\n`,
+        yamlText: `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  base_url: http://user:pass@llama:8080/v1\n  backend: llama\n  model: m\n`,
       },
     );
     expect(redact("http://user:pass@llama:8080/v1")).toBe("[REDACTED]");
@@ -103,10 +108,13 @@ describe("config.yaml loading", () => {
 });
 
 describe("jira.server and jql validation", () => {
+  const CLASSIFIER_YAML =
+    "classifier:\n  backend: llama\n  base_url: http://localhost:8080/v1\n  model: test-model\n";
+
   it("requires the server and a valid https origin", () => {
-    expect(() => loadConfig({}, { yamlText: "jql:\n  candidate: a\n  audit: b\n" })).toThrow(
-      "jira.server is required",
-    );
+    expect(() =>
+      loadConfig({}, { yamlText: `${CLASSIFIER_YAML}jql:\n  candidate: a\n  audit: b\n` }),
+    ).toThrow("jira.server is required");
     for (const server of [
       "http://example.atlassian.net",
       "https://example.atlassian.net:8443",
@@ -119,7 +127,9 @@ describe("jira.server and jql validation", () => {
       expect(() =>
         loadConfig(
           {},
-          { yamlText: `jira:\n  server: ${server}\njql:\n  candidate: a\n  audit: b\n` },
+          {
+            yamlText: `${CLASSIFIER_YAML}jira:\n  server: ${server}\njql:\n  candidate: a\n  audit: b\n`,
+          },
         ),
       ).toThrow(ConfigError);
     }
@@ -129,13 +139,17 @@ describe("jira.server and jql validation", () => {
     expect(() =>
       loadConfig(
         {},
-        { yamlText: "jira:\n  server: https://example.atlassian.net\njql:\n  audit: b\n" },
+        {
+          yamlText: `${CLASSIFIER_YAML}jira:\n  server: https://example.atlassian.net\njql:\n  audit: b\n`,
+        },
       ),
     ).toThrow("jql.candidate is required");
     expect(() =>
       loadConfig(
         {},
-        { yamlText: "jira:\n  server: https://example.atlassian.net\njql:\n  candidate: a\n" },
+        {
+          yamlText: `${CLASSIFIER_YAML}jira:\n  server: https://example.atlassian.net\njql:\n  candidate: a\n`,
+        },
       ),
     ).toThrow("jql.audit is required");
   });
@@ -149,5 +163,37 @@ describe("jira.server and jql validation", () => {
       { yamlText: `${REQUIRED_YAML}team_name_prefixes:\n  - "ACME "\n` },
     );
     expect(config.teamNamePrefixes).toEqual(["ACME "]);
+  });
+});
+
+describe("classifier validation", () => {
+  it("requires an explicit classifier: no defaults", () => {
+    expect(() => loadConfig({}, { yamlText: REQUIRED_YAML_NO_CLASSIFIER })).toThrow(/classifier/);
+    for (const yaml of [
+      `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: llama\n`,
+      `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: llama\n  base_url: http://localhost:8080/v1\n`,
+      `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: llama\n  model: m\n`,
+    ]) {
+      expect(() => loadConfig({}, { yamlText: yaml })).toThrow(ConfigError);
+    }
+  });
+
+  it("openai requires CLASSIFIER_API_KEY at load time", () => {
+    expect(() =>
+      loadConfig(
+        {},
+        {
+          yamlText: `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: openai\n  base_url: https://api.openai.com/v1\n  model: gpt-6-luna\n`,
+        },
+      ),
+    ).toThrow(/CLASSIFIER_API_KEY is required.*\.env/);
+    const config = loadConfig(
+      { CLASSIFIER_API_KEY: "sk-test" },
+      {
+        yamlText: `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: openai\n  base_url: https://api.openai.com/v1\n  model: gpt-6-luna\n`,
+      },
+    );
+    expect(config.classifierBackend).toBe("openai");
+    expect(config.classifierApiKey).toBe("sk-test");
   });
 });

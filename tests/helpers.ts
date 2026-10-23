@@ -195,4 +195,9 @@ export class FakeJiraClient implements JiraClient {
 
 /** The required config surface (jira site + JQL) with fictional values. */
 export const EXAMPLE_SERVER = "https://example.atlassian.net";
-export const REQUIRED_YAML = `jira:\n  server: ${EXAMPLE_SERVER}\njql:\n  candidate: 'project in (PROJ) AND status != closed'\n  audit: 'project in (PROJ) AND component is not EMPTY'\n`;
+/** The required config minus the classifier block, for tests that supply
+ * their own classifier settings. */
+export const REQUIRED_YAML_NO_CLASSIFIER = `jira:\n  server: ${EXAMPLE_SERVER}\njql:\n  candidate: 'project in (PROJ) AND status != closed'\n  audit: 'project in (PROJ) AND component is not EMPTY'\n`;
+
+/** A minimal valid config: fictional site, JQL, and classifier. */
+export const REQUIRED_YAML = `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: llama\n  base_url: http://localhost:8080/v1\n  model: test-model\n`;

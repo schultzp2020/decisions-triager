@@ -39,16 +39,14 @@ const ConfigSchema = Type.Object(
       ),
     ),
     team_name_prefixes: Type.Optional(Type.Array(Type.String())),
-    classifier: Type.Optional(
-      Type.Object(
-        {
-          backend: Type.Optional(Type.Union([Type.Literal("llama"), Type.Literal("openai")])),
-          base_url: Type.Optional(Type.String()),
-          model: Type.Optional(Type.String()),
-          timeout_seconds: Type.Optional(Type.Number({ minimum: 1 })),
-        },
-        { additionalProperties: false },
-      ),
+    classifier: Type.Object(
+      {
+        backend: Type.Union([Type.Literal("llama"), Type.Literal("openai")]),
+        base_url: Type.String({ minLength: 1 }),
+        model: Type.String({ minLength: 1 }),
+        timeout_seconds: Type.Optional(Type.Number({ minimum: 1 })),
+      },
+      { additionalProperties: false },
     ),
     confidence_threshold: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
     assignee_route: Type.Optional(Type.Boolean()),
@@ -83,10 +81,10 @@ interface YamlConfig {
   jira?: { server?: unknown };
   jql?: { candidate?: unknown; audit?: unknown };
   team_name_prefixes?: unknown;
-  classifier?: {
-    backend?: unknown;
-    base_url?: unknown;
-    model?: unknown;
+  classifier: {
+    backend: "llama" | "openai";
+    base_url: string;
+    model: string;
     timeout_seconds?: unknown;
   };
   confidence_threshold?: unknown;
@@ -256,11 +254,11 @@ export function loadConfig(env: Env = process.env, options: LoadConfigOptions = 
     jiraApiToken: env.JIRA_API_TOKEN ?? "",
     teamConfigFile: dataFilePath(file.files?.teams, "teams.json"),
     componentCatalogFile: dataFilePath(file.files?.components, "components.json"),
-    classifierBackend: (file.classifier?.backend ?? "llama") as ClassifierBackend,
-    classifierBaseUrl: optionalString(file.classifier?.base_url, "http://localhost:8080/v1"),
-    classifierModel: optionalString(file.classifier?.model, "ggml-org/vllm-d3-flash-GGUF:Q8_0"),
+    classifierBackend: file.classifier.backend,
+    classifierBaseUrl: file.classifier.base_url,
+    classifierModel: file.classifier.model,
     classifierApiKey: env.CLASSIFIER_API_KEY ?? "",
-    classifierTimeoutSeconds: optionalNumber(file.classifier?.timeout_seconds, 60),
+    classifierTimeoutSeconds: optionalNumber(file.classifier.timeout_seconds, 60),
     confidenceThreshold: optionalNumber(file.confidence_threshold, 0.7),
     assigneeRoute: optionalBoolean(file.assignee_route, true),
     dryRun: dryRunEnv ?? dryRunFile,
@@ -271,6 +269,12 @@ export function loadConfig(env: Env = process.env, options: LoadConfigOptions = 
     auditRecheckDays: optionalNumber(file.audit?.recheck_days, 30),
     reportFile: optionalString(file.report_file, ""),
   };
+
+  // The openai backend cannot classify without a key: fail at load, with
+  // the fix in the message, instead of deep inside the first classify call.
+  if (config.classifierBackend === "openai" && !config.classifierApiKey) {
+    throw new ConfigError("CLASSIFIER_API_KEY is required for the openai backend (add it to .env)");
+  }
 
   // Scrub every configured secret from all diagnostic output (redact()).
   const secrets = [config.jiraApiToken, config.classifierApiKey];

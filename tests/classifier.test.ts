@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ClassifierResult } from "@earendil-works/pi-ai";
 import { PiClassifier, type ClassifyFn } from "../src/classifier.ts";
 import { loadConfig } from "../src/config.ts";
-import { REQUIRED_YAML } from "./helpers.ts";
+import { REQUIRED_YAML_NO_CLASSIFIER } from "./helpers.ts";
 import { registerSecrets, resetSecrets } from "../src/redact.ts";
 
 interface Recorded {
@@ -153,7 +153,7 @@ describe("buildClassifier wiring", () => {
     const config = loadConfig(
       { CLASSIFIER_API_KEY: "sk-x" },
       {
-        yamlText: `${REQUIRED_YAML}classifier:\n  backend: openai\n  model: my-model\n  base_url: https://api.openai.com/v1\n`,
+        yamlText: `${REQUIRED_YAML_NO_CLASSIFIER}classifier:\n  backend: openai\n  model: my-model\n  base_url: https://api.openai.com/v1\n`,
       },
     );
     const classifier = new PiClassifier({

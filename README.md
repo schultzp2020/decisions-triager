@@ -42,8 +42,9 @@ to validate the setup.
    cp .env.example .env
    ```
 
-3. **Fill in `config.yaml`**: set `jira.server` to your Jira site and the
-   two `jql.*` queries to your projects. `teams.json` maps each team to
+3. **Fill in `config.yaml`**: set `jira.server` to your Jira site, the
+   two `jql.*` queries to your projects, and the `classifier` block to
+   your backend, endpoint, and model. `teams.json` maps each team to
    its Jira UUID, members, and component scope; `components.json` maps
    each canonical component to a description and its aliases.
 
@@ -156,31 +157,31 @@ Validated against a [TypeBox](https://github.com/sinclairzx81/typebox)
 schema at startup: unknown keys and wrong types abort the run — a typo
 can never silently enable live writes. Required settings:
 
-| Setting              | Purpose                                                                                                           |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `jira.server`        | Exactly one `https` origin, e.g. `https://your-site.atlassian.net` — no port, path, query, fragment, or user info |
-| `jql.candidate`      | Search for tickets missing Team and/or component                                                                  |
-| `jql.audit`          | Search for tickets with Team and component both set                                                               |
-| `team_name_prefixes` | Prefixes stripped from live Jira team names before catalog matching (case-insensitive), e.g. `["ACME "]`          |
+| Setting               | Purpose                                                                                                           |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `jira.server`         | Exactly one `https` origin, e.g. `https://your-site.atlassian.net` — no port, path, query, fragment, or user info |
+| `jql.candidate`       | Search for tickets missing Team and/or component                                                                  |
+| `jql.audit`           | Search for tickets with Team and component both set                                                               |
+| `team_name_prefixes`  | Prefixes stripped from live Jira team names before catalog matching (case-insensitive), e.g. `["ACME "]`          |
+| `classifier.backend`  | `llama` (System One on llama.cpp) or `openai` (Decisions API) — there is no default provider                      |
+| `classifier.base_url` | Classifier endpoint, e.g. `http://localhost:8080/v1` or `https://api.openai.com/v1`                               |
+| `classifier.model`    | Model id, e.g. `ggml-org/vllm-d3-flash-GGUF:Q8_0` or `gpt-6-luna`                                                 |
 
 Optional settings:
 
-| Setting                            | Default                            | Purpose                                                       |
-| ---------------------------------- | ---------------------------------- | ------------------------------------------------------------- |
-| `mode`                             | `triage`                           | `triage` \| `audit` \| `eval`                                 |
-| `classifier.backend`               | `llama`                            | `llama` (System One on llama.cpp) or `openai` (Decisions API) |
-| `classifier.base_url`              | `http://localhost:8080/v1`         | Classifier endpoint; set explicitly for `openai`              |
-| `classifier.model`                 | `ggml-org/vllm-d3-flash-GGUF:Q8_0` | Model id; set explicitly for `openai`                         |
-| `classifier.timeout_seconds`       | `60`                               | Per-request timeout (>= 1)                                    |
-| `confidence_threshold`             | `0.7`                              | Minimum confidence to write (inclusive), `[0, 1]`             |
-| `assignee_route`                   | `true`                             | Deterministic assignee→team pre-route                         |
-| `dry_run`                          | `true`                             | `false` enables live Jira writes                              |
-| `max_tickets`                      | `100`                              | Candidate limit per run (>= 1)                                |
-| `description_max_chars`            | `48000`                            | Cap on the description sent to the classifier (>= 500)        |
-| `audit.recheck_days`               | `30`                               | Dedup interval for re-audits (>= 0)                           |
-| `audit.state_file`                 | `triager-state.json`               | Audit history (atomic JSON, cwd-relative)                     |
-| `report_file`                      | `report-<timestamp>.json`          | Per-run JSON artifact                                         |
-| `files.teams` / `files.components` | shipped files                      | Catalog paths (package-relative when bare)                    |
+| Setting                            | Default                   | Purpose                                                |
+| ---------------------------------- | ------------------------- | ------------------------------------------------------ |
+| `mode`                             | `triage`                  | `triage` \| `audit` \| `eval`                          |
+| `classifier.timeout_seconds`       | `60`                      | Per-request timeout (>= 1)                             |
+| `confidence_threshold`             | `0.7`                     | Minimum confidence to write (inclusive), `[0, 1]`      |
+| `assignee_route`                   | `true`                    | Deterministic assignee→team pre-route                  |
+| `dry_run`                          | `true`                    | `false` enables live Jira writes                       |
+| `max_tickets`                      | `100`                     | Candidate limit per run (>= 1)                         |
+| `description_max_chars`            | `48000`                   | Cap on the description sent to the classifier (>= 500) |
+| `audit.recheck_days`               | `30`                      | Dedup interval for re-audits (>= 0)                    |
+| `audit.state_file`                 | `triager-state.json`      | Audit history (atomic JSON, cwd-relative)              |
+| `report_file`                      | `report-<timestamp>.json` | Per-run JSON artifact                                  |
+| `files.teams` / `files.components` | shipped files             | Catalog paths (package-relative when bare)             |
 
 Relative catalog paths resolve against the package directory, not the
 working directory.

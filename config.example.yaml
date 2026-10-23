@@ -34,12 +34,19 @@ jql:
 team_name_prefixes: []
 
 classifier:
+  # Required — there is no default backend; pick one and give it an
+  # endpoint and model. Secrets (CLASSIFIER_API_KEY) go in .env, never
+  # here: the openai backend refuses to start without it.
+  #
   # llama: llama-server serving a System One decision model (/v1/systemone),
   #   e.g. ggml-org's d3-flash. No API key needed locally.
-  # openai: OpenAI's Decisions API (needs CLASSIFIER_API_KEY in .env).
   backend: llama
   base_url: http://localhost:8080/v1
   model: ggml-org/vllm-d3-flash-GGUF:Q8_0
+  # openai: OpenAI's Decisions API (needs CLASSIFIER_API_KEY in .env):
+  # backend: openai
+  # base_url: https://api.openai.com/v1
+  # model: gpt-6-luna
   timeout_seconds: 60
 
 # Minimum model confidence to write (inclusive), 0..1.

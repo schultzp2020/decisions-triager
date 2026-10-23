@@ -6,6 +6,10 @@ jira:
 jql:
   candidate: "project in (PROJ) AND status != closed"
   audit: "project in (PROJ) AND component is not EMPTY"
+classifier:
+  backend: llama
+  base_url: http://localhost:8080/v1
+  model: test-model
 files:
   teams: teams.example.json
   components: components.example.json
