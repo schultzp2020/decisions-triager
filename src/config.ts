@@ -15,7 +15,12 @@ import { Value } from "typebox/value";
 import { registerSecrets } from "./redact.ts";
 
 export const BASE_DIR = join(import.meta.dirname, "..");
-export const TEAM_FIELD = "customfield_10001"; // Jira custom field id for "Team"
+export const TEAM_FIELD = "customfield_10001"; // default Jira custom field id for "Team"
+
+/** Fields fetched for every issue; teamField is where the Team lives. */
+export function searchFields(teamField: string): string[] {
+  return ["summary", "description", "components", teamField, "assignee", "project"];
+}
 
 export type ClassifierBackend = "llama" | "openai";
 export type Mode = "triage" | "audit" | "eval";
@@ -30,7 +35,13 @@ const ConfigSchema = Type.Object(
       Type.Union([Type.Literal("triage"), Type.Literal("audit"), Type.Literal("eval")]),
     ),
     jira: Type.Optional(
-      Type.Object({ server: Type.Optional(Type.String()) }, { additionalProperties: false }),
+      Type.Object(
+        {
+          server: Type.Optional(Type.String()),
+          team_field: Type.Optional(Type.String({ minLength: 1 })),
+        },
+        { additionalProperties: false },
+      ),
     ),
     jql: Type.Optional(
       Type.Object(
@@ -78,7 +89,7 @@ const ConfigSchema = Type.Object(
 
 interface YamlConfig {
   mode?: unknown;
-  jira?: { server?: unknown };
+  jira?: { server?: unknown; team_field?: unknown };
   jql?: { candidate?: unknown; audit?: unknown };
   team_name_prefixes?: unknown;
   classifier: {
@@ -201,6 +212,8 @@ export interface Config {
   /** Site-specific prefixes stripped from Jira team names before catalog
    * matching (case-insensitive), e.g. ["ACME "]. */
   teamNamePrefixes: string[];
+  /** The Jira custom field id the Team write targets (and reads). */
+  teamField: string;
   jiraApiToken: string;
   teamConfigFile: string;
   componentCatalogFile: string;
@@ -248,6 +261,7 @@ export function loadConfig(env: Env = process.env, options: LoadConfigOptions = 
 
   const config: Config = {
     jiraServer,
+    teamField: optionalString(file.jira?.team_field, TEAM_FIELD),
     candidateJql,
     auditJql,
     teamNamePrefixes: prefixes,
@@ -285,12 +299,3 @@ export function loadConfig(env: Env = process.env, options: LoadConfigOptions = 
   registerSecrets(...secrets);
   return config;
 }
-
-export const SEARCH_FIELDS = [
-  "summary",
-  "description",
-  "components",
-  TEAM_FIELD,
-  "assignee",
-  "project",
-];

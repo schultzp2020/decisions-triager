@@ -32,6 +32,7 @@ export async function run(
     deps.jiraClient ?? (await buildLiveJiraClient(config)),
     teams,
     config.teamNamePrefixes,
+    config.teamField,
   );
   const classifier = deps.classifier ?? buildClassifier(config);
   // Audit state is the audit mode's own resource: only it loads or writes it.

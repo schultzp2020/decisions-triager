@@ -21,19 +21,22 @@ describe("config.yaml loading", () => {
     expect(config.auditRecheckDays).toBe(30);
     expect(config.stateFile).toBe("triager-state.json");
     expect(config.jiraServer).toBe("https://example.atlassian.net");
+    expect(config.teamField).toBe("customfield_10001");
     expect(config.candidateJql).toBe("project in (PROJ) AND status != closed");
     expect(config.auditJql).toBe("project in (PROJ) AND component is not EMPTY");
     expect(config.teamNamePrefixes).toEqual([]);
   });
 
   it("reads yaml settings", () => {
+    const yaml = REQUIRED_YAML.replace("jira:\n", "jira:\n  team_field: customfield_99999\n");
     const config = loadConfig(
       {},
-      { yamlText: `${REQUIRED_YAML}mode: audit\nconfidence_threshold: 0.4\ndry_run: false\n` },
+      { yamlText: `${yaml}mode: audit\nconfidence_threshold: 0.4\ndry_run: false\n` },
     );
     expect(config.mode).toBe("audit");
     expect(config.confidenceThreshold).toBe(0.4);
     expect(config.dryRun).toBeFalsy();
+    expect(config.teamField).toBe("customfield_99999");
   });
 
   it("rejects unknown keys (typo protection)", () => {

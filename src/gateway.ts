@@ -1,7 +1,7 @@
 // Jira reads and guarded, independently reported domain-field writes.
 // Catalog UUIDs are the authoritative source for Team writes; live
-// customfield_10001 observations only cross-check them.
-import { SEARCH_FIELDS, TEAM_FIELD } from "./config.ts";
+// Team-field observations only cross-check them.
+import { TEAM_FIELD, searchFields } from "./config.ts";
 import type { JiraClient } from "./jira.ts";
 import {
   IssueValidationError,
@@ -24,9 +24,17 @@ export class JiraGateway {
   private readonly teamConflicts = new Set<string>();
   private readonly componentCache = new Map<string, string[] | null>();
 
-  constructor(client: JiraClient, teams: TeamCatalog, teamNamePrefixes: string[] = []) {
+  private readonly teamField: string;
+
+  constructor(
+    client: JiraClient,
+    teams: TeamCatalog,
+    teamNamePrefixes: string[] = [],
+    teamField: string = TEAM_FIELD,
+  ) {
     this.client = client;
     this.prefixes = teamNamePrefixes;
+    this.teamField = teamField;
     this.teamNames = new Map(
       Object.keys(teams).map((name) => [teamNameKey(name, teamNamePrefixes), name]),
     );
@@ -37,7 +45,7 @@ export class JiraGateway {
   }
 
   private normalize(issue: unknown, expectedKey: string | null = null): Ticket {
-    const ticket = normalizeIssue(issue, expectedKey);
+    const ticket = normalizeIssue(issue, expectedKey, this.teamField);
     if (ticket.team !== null) {
       this.observeTeamUuid(issue, ticket.team);
       ticket.team = this.teamNames.get(teamNameKey(ticket.team, this.prefixes)) ?? ticket.team;
@@ -60,7 +68,7 @@ export class JiraGateway {
     // the id is re-read here (same raw/fields extraction).
     const raw = isRecord(issue) ? issue.raw : undefined;
     const fields = isRecord(raw) ? raw.fields : isRecord(issue) ? issue.fields : undefined;
-    const teamField = isRecord(fields) ? fields[TEAM_FIELD] : undefined;
+    const teamField = isRecord(fields) ? fields[this.teamField] : undefined;
     const observed = isRecord(teamField) ? teamField.id : undefined;
     if (!isTeamUuid(observed)) {
       return;
@@ -99,7 +107,7 @@ export class JiraGateway {
     while (tickets.length < limit) {
       const page = await this.searchPage(
         jql,
-        SEARCH_FIELDS,
+        searchFields(this.teamField),
         Math.min(5000, limit - tickets.length),
         token,
       );
@@ -122,7 +130,7 @@ export class JiraGateway {
 
   /** Re-fetch, validate identity and normalize fresh state before writing. */
   async getIssue(key: string): Promise<Ticket> {
-    return this.normalize(await this.client.issue(key, SEARCH_FIELDS), key);
+    return this.normalize(await this.client.issue(key, searchFields(this.teamField)), key);
   }
 
   /** Live component names for a project, or null if the lookup fails. */
@@ -208,7 +216,7 @@ export class JiraGateway {
         if (this.teamConflicts.has(canonical)) {
           return { ...record, status: "abstained", reason: "team-uuid-conflict" };
         }
-        jiraFields = { [TEAM_FIELD]: this.teamIds.get(canonical) };
+        jiraFields = { [this.teamField]: this.teamIds.get(canonical) };
       } else {
         jiraFields = { components: [{ name: value }] };
       }
@@ -231,7 +239,10 @@ export class JiraGateway {
     // Both update-path fetches are contractual. REST has no conditional
     // update; the window after the final fetch remains explicitly accepted.
     for (let i = 0; i < 2; i++) {
-      const current = this.normalize(await this.client.issue(key, SEARCH_FIELDS), key);
+      const current = this.normalize(
+        await this.client.issue(key, searchFields(this.teamField)),
+        key,
+      );
       if (
         (snapshot !== null && current[field] !== snapshot[field]) ||
         (snapshot === null && current[field])

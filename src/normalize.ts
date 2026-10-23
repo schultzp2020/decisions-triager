@@ -2,7 +2,7 @@
 // into validated Tickets, or fails closed (IssueValidationError). Callers
 // must fail the ticket, never treat an unreadable shape as a missing
 // (writable) field.
-import { SEARCH_FIELDS, TEAM_FIELD } from "./config.ts";
+import { TEAM_FIELD, searchFields } from "./config.ts";
 
 export class IssueValidationError extends Error {}
 
@@ -28,7 +28,11 @@ function fieldOf(value: unknown, name: string): unknown {
   return isRecord(value) ? value[name] : undefined;
 }
 
-export function normalizeIssue(issue: unknown, expectedKey: string | null = null): Ticket {
+export function normalizeIssue(
+  issue: unknown,
+  expectedKey: string | null = null,
+  teamField: string = TEAM_FIELD,
+): Ticket {
   const key = isRecord(issue) ? issue.key : undefined;
   if (typeof key !== "string" || !key) {
     throw new IssueValidationError("fetched issue has no readable key");
@@ -43,7 +47,7 @@ export function normalizeIssue(issue: unknown, expectedKey: string | null = null
   if (!isRecord(fields)) {
     throw new IssueValidationError(`${key}: response has no fields object`);
   }
-  const missing = SEARCH_FIELDS.filter((name) => !(name in fields));
+  const missing = searchFields(teamField).filter((name) => !(name in fields));
   if (missing.length > 0) {
     throw new IssueValidationError(`${key}: response omitted fields: ${missing.join(", ")}`);
   }
@@ -66,7 +70,7 @@ export function normalizeIssue(issue: unknown, expectedKey: string | null = null
     component = name;
   }
 
-  const teamRaw = fields[TEAM_FIELD];
+  const teamRaw = fields[teamField];
   let team: string | null = null;
   if (teamRaw === null || teamRaw === undefined) {
     team = null;

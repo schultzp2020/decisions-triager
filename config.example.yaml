@@ -14,11 +14,15 @@ jira:
   # origin: no port, path, query, fragment, or user info.
   server: https://your-site.atlassian.net
 
+  # Jira custom field id for "Team" — check yours under
+  # Settings > Issues > Custom fields (the id shows in the URL when you
+  # open the field). Most Cloud sites use customfield_10001.
+  team_field: customfield_10001
+
 jql:
-  # Candidates: open tickets missing Team and/or component. cf[10001] is
-  # the Jira custom field id for "Team" — check yours under
-  # Settings > Issues > Custom fields if it differs.
-  # Multiword issue-type names must be double-quoted or the JQL is invalid.
+  # Candidates: open tickets missing Team and/or component. cf[10001]
+  # below must match jira.team_field above. Multiword issue-type names
+  # must be double-quoted or the JQL is invalid.
   candidate: >-
     project in (PROJ, SUPP) AND status != closed
     AND (cf[10001] is EMPTY OR component is EMPTY)

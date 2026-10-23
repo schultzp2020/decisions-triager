@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { SEARCH_FIELDS, TEAM_FIELD } from "../src/config.ts";
+import { TEAM_FIELD, searchFields } from "../src/config.ts";
 import { JiraGateway } from "../src/gateway.ts";
 import { IssueValidationError, normalizeIssue } from "../src/normalize.ts";
 import { registerSecrets } from "../src/redact.ts";
@@ -30,7 +30,7 @@ describe("JiraGateway.searchCandidates", () => {
     expect(client.searchCalls[0]).toEqual({
       jql: EXAMPLE_JQL,
       maxResults: 5,
-      fields: SEARCH_FIELDS,
+      fields: searchFields(TEAM_FIELD),
     });
     expect(tickets[0].key).toBe("PROJ-1");
   });
@@ -59,6 +59,29 @@ describe("JiraGateway.searchCandidates", () => {
 });
 
 describe("JiraGateway guarded writes", () => {
+  it("honors a configured team_field for reads and writes", async () => {
+    const other = "customfield_99999";
+    const issue = rawIssue("PROJ-1");
+    delete issue.fields[TEAM_FIELD];
+    issue.fields[other] = { name: "Platform", id: UUID };
+    const client = new FakeJiraClient({ searchResults: [structuredClone(issue)] });
+    const g = new JiraGateway(client, structuredClone(TEAMS), [], other);
+    const tickets = await g.searchCandidates(5, EXAMPLE_JQL);
+    expect(tickets[0]?.team).toBe("Platform");
+    expect(client.searchCalls[0]).toEqual({
+      jql: EXAMPLE_JQL,
+      maxResults: 5,
+      fields: searchFields(other),
+    });
+
+    issue.fields[other] = null; // team now missing
+    const writeClient = new FakeJiraClient({ issues: { "PROJ-1": [issue] } });
+    const gw = new JiraGateway(writeClient, structuredClone(TEAMS), [], other);
+    const result = await gw.fillMissing("PROJ-1", "team", "Platform", false);
+    expect(result.status).toBe("written");
+    expect(writeClient.updates).toEqual([{ key: "PROJ-1", fields: { [other]: UUID } }]);
+  });
+
   it("writes the catalog team UUID and component name when still missing", async () => {
     const client = new FakeJiraClient({ issues: { "PROJ-1": [rawIssue()] } });
     const result = await gateway(client).fillMissing("PROJ-1", "team", "Platform", false);

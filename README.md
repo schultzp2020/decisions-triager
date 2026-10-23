@@ -23,6 +23,13 @@ You will clone the repo, point it at a Jira site with fictional-but-valid
 catalogs, and run it in dry-run mode — no writes, no model server needed
 to validate the setup.
 
+You need **Node 24+** (the tool runs TypeScript directly, no build step)
+and **pnpm** (`corepack enable` or `npm i -g pnpm`). Everything else —
+Jira site, API token, catalogs, classifier — is configured in the steps
+below. A Jira Cloud site with the **Teams** feature and a custom **Team**
+field is assumed; the token's account needs read access plus edit on the
+projects in your JQL.
+
 1. **Install.**
 
    ```bash
@@ -44,11 +51,31 @@ to validate the setup.
 
 3. **Fill in `config.yaml`**: set `jira.server` to your Jira site, the
    two `jql.*` queries to your projects, and the `classifier` block to
-   your backend, endpoint, and model. `teams.json` maps each team to
-   its Jira UUID, members, and component scope; `components.json` maps
-   each canonical component to a description and its aliases.
+   your backend, endpoint, and model. If your Team custom field is not
+   `customfield_10001`, set `jira.team_field`: Jira → Settings →
+   Issues → Custom fields, open your Team field, and read the
+   `customfield_...` id from the URL.
 
-4. **Add your credential** to `.env`:
+4. **Fill in the catalogs.**
+
+   - `teams.json` — one entry per team:
+     - `id`: the Atlassian team UUID. Find it in Jira's Teams directory
+       (the team page URL contains it). If you can only find the name,
+       put any placeholder UUID in and run a dry run: the tool reads the
+       live UUID from search results and warns with the exact value it
+       observed (`team UUID conflict for ...`), in dry run, with nothing
+       written.
+     - `members`: assignee display names, used by the deterministic
+       assignee→team pre-route (case-insensitive).
+     - `components`: the team's component scope, shown to the model as
+       team criteria.
+   - `components.json` — one entry per **canonical component**, exactly
+     as the name appears in the live Jira project (the tool fetches the
+     live list and only writes names that exist there), plus
+     `description` (shown to the model) and `aliases` (labels the model
+     may answer with, canonicalized before validation).
+
+5. **Add your credential** to `.env`:
 
    ```dotenv
    JIRA_API_TOKEN=you@example.com:your-api-token
@@ -56,8 +83,10 @@ to validate the setup.
 
    Create the token at Jira → Settings → Security → API token
    (`email:token` is sent as Basic auth to your configured origin only).
+   For the `openai` classifier backend, also add `CLASSIFIER_API_KEY=`;
+   the tool refuses to start without it.
 
-5. **Validate offline.**
+6. **Validate offline.**
 
    ```bash
    node src/index.ts --check
@@ -67,7 +96,7 @@ to validate the setup.
    unknown key, malformed catalog, or bad credential shape aborts here
    with a precise message.
 
-6. **Dry run.**
+7. **Dry run.**
 
    ```bash
    node src/index.ts
@@ -163,6 +192,7 @@ can never silently enable live writes. Required settings:
 | `jql.candidate`       | Search for tickets missing Team and/or component                                                                  |
 | `jql.audit`           | Search for tickets with Team and component both set                                                               |
 | `team_name_prefixes`  | Prefixes stripped from live Jira team names before catalog matching (case-insensitive), e.g. `["ACME "]`          |
+| `jira.team_field`     | Jira custom field id for Team (default `customfield_10001`)                                                       |
 | `classifier.backend`  | `llama` (System One on llama.cpp) or `openai` (Decisions API) — there is no default provider                      |
 | `classifier.base_url` | Classifier endpoint, e.g. `http://localhost:8080/v1` or `https://api.openai.com/v1`                               |
 | `classifier.model`    | Model id, e.g. `ggml-org/vllm-d3-flash-GGUF:Q8_0` or `gpt-6-luna`                                                 |

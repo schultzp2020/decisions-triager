@@ -45,6 +45,6 @@ by weakening the check it covers is wrong even when `pnpm check` passes.
   `config.yaml`, `teams.json`, and `components.json` are gitignored
   deployment files; commit only the `*.example*` counterparts.
 - External contracts to keep verbatim: the report JSON shape, the
-  `triager-state.json` entry shape, the `TEAM_FIELD` custom-field id, and
-  the two-arg `searchCandidates(limit, jql)` style seams the tests drive.
-  Change them deliberately, never incidentally.
+  `triager-state.json` entry shape, and the two-arg
+  `searchCandidates(limit, jql)` style seams the tests drive. Change them
+  deliberately, never incidentally.
