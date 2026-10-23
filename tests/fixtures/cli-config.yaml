@@ -4,8 +4,8 @@
 jira:
   server: https://example.atlassian.net
 jql:
-  candidate: 'project in (PROJ) AND status != closed'
-  audit: 'project in (PROJ) AND component is not EMPTY'
+  candidate: "project in (PROJ) AND status != closed"
+  audit: "project in (PROJ) AND component is not EMPTY"
 files:
   teams: teams.example.json
   components: components.example.json

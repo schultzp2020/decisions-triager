@@ -17,8 +17,6 @@ config.yaml
 teams.json
 components.json
 
-# The CLI-test fixture config is committed on purpose.
-!tests/fixtures/config.yaml
 
 # Run artifacts
 triager-state.json

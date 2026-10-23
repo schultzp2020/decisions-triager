@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const CLI = join(import.meta.dirname, "..", "src", "index.ts");
-const FIXTURE_CONFIG = join(import.meta.dirname, "fixtures", "config.yaml");
+const FIXTURE_CONFIG = join(import.meta.dirname, "fixtures", "cli-config.yaml");
 
 function runCli(
   args: string[],
