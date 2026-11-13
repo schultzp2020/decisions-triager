@@ -19,17 +19,17 @@
     "check": "pnpm lint && pnpm format:check && pnpm test"
   },
   "dependencies": {
-    "@earendil-works/pi-ai": "^1.5.0",
+    "@earendil-works/pi-ai": "^1.5.2",
     "cleye": "^2.7.0",
     "jira.js": "^6.4.0",
-    "typebox": "^1.4.3",
+    "typebox": "^1.4.6",
     "yaml": "^2.9.1"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
-    "oxfmt": "^0.76.0",
-    "oxlint": "^1.91.0",
-    "oxlint-tsgolint": "^7.0.2004",
+    "oxfmt": "^0.78.0",
+    "oxlint": "^1.93.0",
+    "oxlint-tsgolint": "^7.0.2006",
     "vitest": "^5.1.0"
   },
   "engines": {
